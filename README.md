@@ -23,8 +23,8 @@ The query identifies:
 ### Challenges
 
 1. **Name field identification**
-   - Challenge: Initially I tried to use a non-existent name column in the users table.
-   - Solution: After examining the database schema more carefully, I realized I needed to concatenate first_name and last_name fields to display the customer's full name.
+   - Challenge: While trying to get familiar with the available data, I realized a non-existent name column in the users table, which will be needed for my analysis
+   - Solution: After examining the database schema more carefully, I knew I needed to concatenate first_name and last_name fields to display the customer's full name.
 
 2. **Accurate plan counting**
    - Challenge: Getting an accurate count of each plan type per customer required careful consideration.
@@ -37,10 +37,7 @@ The query identifies:
      - All plans for specific high-count customers
      - Potential duplicate transactions
    - This helped confirm whether high counts were legitimate or indicated data anomalies.
-
-4. **Efficiency in grouping**
-   - Challenge: Initial grouping included unnecessary columns.
-   - Solution: Simplified the GROUP BY clause to use only the primary key (u.id), improving efficiency while maintaining correct aggregation.
+   
 
 ## Question 2: Transaction Frequency Analysis
 
@@ -69,13 +66,6 @@ The query implements:
    - Challenge: Needed to determine how many transactions each customer makes per month on average.
    - Solution: Used EXTRACT(YEAR_MONTH FROM transaction_date) to convert dates to YYYYMM format, allowing me to count distinct months of activity and divide the total transaction count by this number.
 
-3. **Appropriate Categorization**
-   - Challenge: Ensuring that the categorization logic correctly placed customers in the right frequency buckets.
-   - Solution: Applied the CASE statement with clear boundary conditions to create three distinct categories, making sure that every customer would fall into exactly one category.
-
-4. **Result Ordering**
-   - Challenge: Needed to present results in a logical order (High → Medium → Low) rather than alphabetical.
-   - Solution: Used a CASE statement in the ORDER BY clause to assign numeric sort values to each category, ensuring consistent presentation of results.
 
 ## Question 3: Account Inactivity Alert
 
@@ -89,38 +79,17 @@ For this question, I needed to identify savings and investment accounts with no 
 5. Filter only active accounts by excluding deleted or archived plans.
 6. Use a HAVING clause to include only accounts with inactivity exceeding 365 days.
 
-### Query Explanation
-```sql
-SELECT 
-    p.id AS plan_id,
-    p.owner_id,
-    CASE 
-        WHEN p.is_regular_savings = 1 THEN 'Savings'
-        WHEN p.is_a_fund = 1 THEN 'Investment'
-        ELSE 'Other'
-    END AS type,
-    MAX(s.transaction_date) AS last_transaction_date,
-    DATEDIFF(CURRENT_DATE(), MAX(s.transaction_date)) AS inactivity_days
-FROM 
-    plans_plan p
-LEFT JOIN 
-    savings_savingsaccount s ON p.id = s.plan_id
-WHERE 
-    p.is_deleted = 0 
-    AND p.is_archived = 0
-    AND (p.is_regular_savings = 1 OR p.is_a_fund = 1)
-GROUP BY 
-    p.id, p.owner_id
-HAVING 
-    DATEDIFF(CURRENT_DATE(), last_transaction_date) > 365
-ORDER BY 
-    inactivity_days DESC;
-```
-
 ### Challenges
-1. **Handling NULL Values**: Originally, I included a condition in the HAVING clause to handle accounts with no transactions ever (NULL last_transaction_date). However, these would produce NULL in the DATEDIFF calculation, which wouldn't satisfy the `> 365` condition. The final implementation focuses on accounts with transactions older than 365 days.
+1. **Ignoring Archived or Deleted Accounts**
+- Challenge: Initially, I didn’t account for the fact that some plans may be archived or deleted. This caused inaccurate results by including plans that were no longer relevant.
+- Solution: Upon reviewing the schema more closely, I noticed the is_deleted and is_archived flags. I modified the query to exclude these records in the WHERE clause to ensure only truly active accounts were included.
+2.  **Handling NULL Values**
+- Challenge: Originally, my inital query included a condition in the HAVING clause to handle accounts with no transactions ever. Which produced NULL in the DATEDIFF calculation and wouldn't satisfy the `> 365` condition. The final implementation focuses on accounts with transactions older than 365 days.
+- Solution: I focused the query on accounts with actual transaction history older than 365 days. For accounts with no transactions, a separate analysis might be needed where we would compare the account creation date to the current date instead of transaction dates.
 
-2. **Identifying Account Types**: The database uses boolean flags rather than a single type column, requiring careful use of the CASE statement to properly categorize accounts.
+3. **Identifying Account Types**
+- Challenge: The database schema uses boolean flags (is_regular_savings and is_a_fund) rather than a single account type column, requiring careful categorization logic.
+- Solution: I implemented a CASE statement to properly transform these boolean flags into meaningful account type labels ("Savings" or "Investment"). This approach provides clear classification in the results.
 
 ## Question 4: Customer Lifetime Value (CLV) Estimation
 
@@ -134,43 +103,17 @@ For calculating the Customer Lifetime Value, I needed to create a complex calcul
 5. Filter to include only successful transactions.
 6. Exclude accounts with zero tenure to prevent division by zero errors.
 
-### Query Explanation
-```sql
-SELECT 
-    u.id AS customer_id,
-    CONCAT(u.first_name, ' ', u.last_name) AS name,
-    TIMESTAMPDIFF(MONTH, u.date_joined, CURRENT_DATE()) AS tenure_months,
-    COUNT(s.id) AS total_transactions,
-    ROUND(
-        (COUNT(s.id) / TIMESTAMPDIFF(MONTH, u.date_joined, CURRENT_DATE())) * 12 * 
-        (SUM(s.confirmed_amount) * 0.001 / COUNT(s.id)), 
-        2
-    ) AS estimated_clv
-FROM 
-    users_customuser u
-JOIN 
-    savings_savingsaccount s ON u.id = s.owner_id
-WHERE 
-    s.transaction_status = 'success' 
-GROUP BY 
-    u.id, 
-    u.first_name, 
-    u.last_name, 
-    u.date_joined
-HAVING 
-    tenure_months > 0
-ORDER BY 
-    estimated_clv DESC;
-```
-
 ### Challenges
-1. **Complex CLV Formula**: Implementing the multi-part formula correctly required careful attention to calculation order and proper use of aggregation functions.
+1. **Including Unsuccessful Transactions**
+- Challenge: At first, I included all transactions in the CLV calculation without checking their status. This skewed the results because some transactions were failed or reversed, which shouldn't be counted.
+- Solution: I revised the query to filter only successful transactions (transaction_status = 'success'). This ensured that only verified deposits contributed to the CLV estimate.
+2.  **Complex CLV Formula**
+- Challenge: The Customer Lifetime Value calculation required a multi-part formula incorporating account tenure, transaction frequency, and average profit margins. Implementing this correctly within SQL required careful attention to calculation order and proper use of aggregation functions.
+- Solution: I leveraged MySQL's order of operations to ensure accurate results. My approach was to structure the calculation as a nested formula that first determined the transaction rate (transactions per month), then annualized it (multiplying by 12), and finally multiplied by the average profit per transaction. I used appropriate SQL functions like TIMESTAMPDIFF for date calculations.
 
-2. **Handling New Accounts**: Accounts with very short tenures could cause division by zero errors or skew results with unrealistically high CLV. The HAVING clause prevents division by zero.
-
-3. **Transaction Value Interpretation**: Understanding that the confirmed_amount field contains the transaction value and applying the correct profit margin (0.1%) was crucial for accurate CLV calculation.
-
-4. **Data Type Management**: Ensuring proper handling of date calculations and numeric precision for financial calculations required careful consideration of MySQL's functions and handling of numeric types.
+3. **Handling New Accounts**
+- Challenge: I realized that newly created accounts with very short tenures (especially zero months) could cause division by zero errors or result in unrealistically high CLV projections that would skew the analysis.
+- Solution: I implemented a HAVING clause to filter out accounts with zero tenure months, preventing division by zero errors. This ensures the CLV calculation remains mathematically sound while still including as many valid customers as possible in the analysis.
 
 ## General Learnings
 
@@ -180,5 +123,3 @@ Throughout this assessment, I gained valuable insights into:
 2. Techniques for handling NULL values and edge cases in financial data
 3. Effective use of MySQL date and time functions for temporal analysis
 4. Methods for calculating customer value metrics in a financial context
-
-These queries demonstrate my ability to extract meaningful business insights from complex relational data structures while handling real-world data challenges.
