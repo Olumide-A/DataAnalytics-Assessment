@@ -1,4 +1,4 @@
-# DataAnalytics-Assessment
+# Cowrywise Assessment
 
 This repository contains SQL queries for a data analytics assessment focused on analyzing customer data, savings accounts, plans, and withdrawal transactions.
 
