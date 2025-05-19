@@ -23,7 +23,7 @@ The query identifies:
 ### Challenges
 
 1. **Name field identification**
-   - Challenge: While trying to get familiar with the available data, I realized a non-existent name column in the users table, which will be needed for my analysis
+   - Challenge: While trying to get familiar with the available data, I realized a name column filled with NULL in the users table, and this field will be needed for my analysis
    - Solution: After examining the database schema more carefully, I knew I needed to concatenate first_name and last_name fields to display the customer's full name.
 
 2. **Accurate plan counting**
